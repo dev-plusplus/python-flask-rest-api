@@ -1,13 +1,27 @@
-from flask import Flask, request
+import os
+
+from flask import Flask, request, abort, g
 import pymongo
 from bson.objectid import ObjectId
-
+from dotenv import load_dotenv
 from cerberus import Validator
+from os import environ
+import jwt
 
-schema = {"name": {"type": "string"}, "description": {"type": "string"}}
+from decorators import auth_decorator
+from utils import serialize_mongo_id
+
+load_dotenv()
+
+schema = {"name": {"type": "string"}, "description": {"type": "string"}, "completedAt": {"type": "string"}}
 validator: Validator = Validator(schema)
 
 app = Flask(__name__)
+# Connect to Mongo
+client = pymongo.MongoClient(environ.get('URI'))
+task_database = client['TasksDatabase']
+task_collection = task_database['TasksCollection']
+user_collection = task_database['UsersCollection']
 
 
 @app.route('/')
@@ -15,31 +29,35 @@ def hello():
     return 'Hello World!'
 
 
-# Connect to Mongo
-client = pymongo.MongoClient("mongodb+srv://demo:123demo123@cluster0.09pkckl.mongodb.net/?retryWrites=true&w=majority")
-task_database = client['task_database']
-task_collection = task_database['task_collection']
-print(client.server_info())
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    email = data.get("email", None)
+    password = data.get("password", None)
+    if email is None or password is None:
+        abort(400)
+    query_filter = {"email": email, "password": password}
+    user = user_collection.find_one(query_filter)
+    if user is None:
+        abort(404)
 
+    sanitized_user = serialize_mongo_id(user)
+    payload = {"id": sanitized_user.get('_id'), "email": sanitized_user.get("email")}
+    token = jwt.encode(payload, environ.get('SECRET'), algorithm="HS256")
+    return {"token": token}
 
-def serialize(mongo_row):
-    mongo_row['_id'] = str(mongo_row['_id'])
-    return mongo_row
-
-
-# CRUD for Tasks
-# C = Create Tasks (HTTP POST)
-# R = Reading a Task / Reading all the Tasks (HTTP GET)
-# U = Update a Task (HTTP PUT)
-# D = Delete a Task (HTTP DELETE)
 
 @app.route('/tasks', methods=['GET', 'POST'])
+@auth_decorator
 def tasks_view():
+    if g.user is None:
+        abort(403)
+
     if request.method == 'GET':
         tasks_cursor = task_collection.find({})
         tasks = []
         for task in tasks_cursor:
-            tasks.append(serialize(task))
+            tasks.append(serialize_mongo_id(task))
         return tasks
 
     if request.method == 'POST':
@@ -49,16 +67,19 @@ def tasks_view():
             return validator.errors
         # insert_one modifies the input object to set the _id when you don't put an _id
         task_collection.insert_one(data)
-        serialize(data)
+        serialize_mongo_id(data)
         return data
 
 
 @app.route('/task/<task_id>', methods=['GET', 'PUT', 'DELETE'])
+@auth_decorator
 def task_view(task_id):
+    if g.user is None:
+        abort(403)
     _task_id = ObjectId(task_id)
     if request.method == 'GET':
         task = task_collection.find_one({"_id": _task_id})
-        return serialize(task)
+        return serialize_mongo_id(task)
 
     if request.method == 'PUT':
         new_task = request.get_json()
