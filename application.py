@@ -89,3 +89,7 @@ def task_view(task_id):
     if request.method == 'DELETE':
         task_collection.delete_one({"_id": _task_id})
         return {"response": True}
+
+
+if __name__ == '__main__':
+    app.run()
