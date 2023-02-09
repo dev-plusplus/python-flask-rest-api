@@ -16,7 +16,7 @@ load_dotenv()
 schema = {"name": {"type": "string"}, "description": {"type": "string"}, "completedAt": {"type": "string"}}
 validator: Validator = Validator(schema)
 
-app = Flask(__name__)
+application = Flask(__name__)
 # Connect to Mongo
 client = pymongo.MongoClient(environ.get('URI'))
 task_database = client['TasksDatabase']
@@ -24,12 +24,12 @@ task_collection = task_database['TasksCollection']
 user_collection = task_database['UsersCollection']
 
 
-@app.route('/')
+@application.route('/')
 def hello():
     return 'Hello World!'
 
 
-@app.route('/login', methods=['POST'])
+@application.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
     email = data.get("email", None)
@@ -47,7 +47,7 @@ def login():
     return {"token": token}
 
 
-@app.route('/tasks', methods=['GET', 'POST'])
+@application.route('/tasks', methods=['GET', 'POST'])
 @auth_decorator
 def tasks_view():
     if g.user is None:
@@ -71,7 +71,7 @@ def tasks_view():
         return data
 
 
-@app.route('/task/<task_id>', methods=['GET', 'PUT', 'DELETE'])
+@application.route('/task/<task_id>', methods=['GET', 'PUT', 'DELETE'])
 @auth_decorator
 def task_view(task_id):
     if g.user is None:
@@ -92,4 +92,4 @@ def task_view(task_id):
 
 
 if __name__ == '__main__':
-    app.run()
+    application.run()
